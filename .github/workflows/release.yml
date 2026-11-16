@@ -1,0 +1,73 @@
+# WhoLock · 构建发布流水线（C++/CMake/MSVC 单 exe）
+# 触发：推 tag v* 自动发版 + workflow_dispatch 手动试跑（坑#1：触发器只在默认分支生效）
+name: Build and Release
+
+on:
+  push:
+    tags: ["v*"]          # 正式发版入口：tag 与 CMakeLists project(VERSION) 必须同源
+  workflow_dispatch:      # 手动试跑入口（零风险演练，见 pitfall 上线前自检第 1 条）
+
+permissions: { contents: write }  # 创建 Release 必需（坑#6：job 级最小权限声明）
+
+jobs:
+  build:
+    runs-on: windows-latest   # MSVC + CMake 均预装；本仓库无签名需求，无需 secrets（坑#3）
+    steps:
+      - uses: actions/checkout@v4                       # 锁主版本（坑#8）
+
+      - name: 版本一致性校验（tag ↔ project(VERSION) 单一事实源）
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: bash
+        run: |
+          CMAKE_VER=$(grep -oP 'project\(\w+\s+VERSION\s+\K[0-9]+\.[0-9]+\.[0-9]+' CMakeLists.txt)
+          echo "CMakeLists 版本: $CMAKE_VER ｜ tag: ${GITHUB_REF_NAME#v}"
+          if [ "${GITHUB_REF_NAME#v}" != "$CMAKE_VER" ]; then
+            echo "::error::tag ${GITHUB_REF_NAME} 与 CMakeLists 版本 ${CMAKE_VER} 不一致"
+            exit 1
+          fi
+
+      - name: Configure (CMake ≥ 3.28, MSVC 预装)
+        run: cmake -S . -B build -DCMAKE_CONFIGURATION_TYPES=Release
+
+      - name: Build (Release, /MT 静态 CRT 单 exe)
+        run: cmake --build build --config Release --parallel
+      # 说明：ctest 不作为 CI 门禁——G1/F8 等真锁/真句柄集成样例依赖本机环境
+      #（GitHub runner 非管理员无 SeDebugPrivilege，跨进程句柄/跨会话占用断言必然失败），验收以本地 ctest 为准
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wholock-windows-x64                     # 产物名带平台后缀（坑#7）
+          path: build/out/wholock.exe
+
+  release:
+    needs: build                          # build（含测试门禁）全绿才发版（坑#2）
+    if: startsWith(github.ref, 'refs/tags/')  # 手动 dispatch 不建 Release（ref 是分支名）
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4        # 拉取 CHANGELOG.md 作发布正文源
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: wholock-windows-x64
+          path: dist
+
+      - name: 从 CHANGELOG 提取本版本说明
+        shell: bash
+        run: |
+          VER="${GITHUB_REF_NAME#v}"
+          awk -v sec="## v${VER}" 'BEGIN{p=0} $0 ~ "^"sec {p=1; print; next} p && /^## /{exit} p{print}' CHANGELOG.md > notes.md
+          if [ ! -s notes.md ]; then
+            echo "WhoLock ${GITHUB_REF_NAME}" > notes.md   # 找不到章节时兜底
+          fi
+          cat notes.md
+
+      - name: Create or update GitHub Release（幂等：已存在则覆盖上传资产）
+        run: |
+          if gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" dist/wholock.exe --clobber --repo "$GITHUB_REPOSITORY"
+            echo "Release 已存在，资产已覆盖上传"
+          else
+            gh release create "$GITHUB_REF_NAME" dist/wholock.exe --title "WhoLock ${GITHUB_REF_NAME}" --notes-file notes.md --repo "$GITHUB_REPOSITORY"
+          fi
+        env:
+          GH_TOKEN: "${{ github.token }}"   # 坑#9：token 只进 env，块式加引号写法（裸 ${{ }} 在 flow 上下文是非法 YAML）

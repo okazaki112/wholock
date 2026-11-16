@@ -1,0 +1,543 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>WhoLock · 文件占用定位器 —— 「删不掉的文件，到底被谁占着？」</title>
+<meta name="description" content="WhoLock：Windows 单 exe 免安装的文件占用定位器。RestartManager + 句柄表 + 深扫三通道找出占用进程，安全护栏下结束进程或释放句柄。零依赖、零网络、MIT 开源。">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800;900&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+<style>
+/* ============ 设计令牌（UIUX skill 生成：Neubrutalism · #2563EB · 无渐变） ============ */
+:root{
+  --ink:#1E293B;          /* 主文字 */
+  --ink-soft:#475569;     /* 次要文字 */
+  --paper:#F8FAFC;        /* 页面底 */
+  --card:#FFFFFF;         /* 卡片面 */
+  --primary:#2563EB;      /* 品牌蓝（与软件内 Accent 同源） */
+  --primary-dark:#1D4ED8;
+  --primary-soft:#DBEAFE;
+  --cta:#F97316;          /* CTA 橙 */
+  --cta-dark:#EA580C;
+  --ok:#15803D;
+  --warn:#B45309;
+  --border:#0F172A;       /* 粗黑描边 */
+  --shadow:4px 4px 0 var(--border);
+  --shadow-lg:7px 7px 0 var(--border);
+  --mono:"JetBrains Mono",Consolas,monospace;
+  --sans:"Inter","Microsoft YaHei","PingFang SC",sans-serif;
+  --z-nav:50;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html{scroll-behavior:smooth}
+@media (prefers-reduced-motion: reduce){
+  html{scroll-behavior:auto}
+  *,*::before,*::after{animation-duration:.01ms!important;transition-duration:.01ms!important}
+}
+body{
+  font-family:var(--sans);
+  background:var(--paper);
+  color:var(--ink);
+  line-height:1.65;
+  font-size:16px;
+  overflow-x:hidden;
+}
+a{color:inherit}
+img,svg{display:block}
+.wrap{max-width:1200px;margin:0 auto;padding:0 24px}
+h1,h2,h3{line-height:1.25;letter-spacing:-.02em}
+
+/* 可交互元素统一指针 + 焦点环（无障碍） */
+a,button{cursor:pointer}
+:focus-visible{outline:3px solid var(--primary);outline-offset:3px}
+
+/* ============ 跳转链接（键盘导航） ============ */
+.skip{position:absolute;left:-999px;top:8px;z-index:var(--z-nav);background:var(--card);border:3px solid var(--border);padding:8px 16px;font-weight:700}
+.skip:focus{left:8px}
+
+/* ============ 导航 ============ */
+nav{
+  position:sticky;top:0;z-index:var(--z-nav);
+  background:var(--paper);
+  border-bottom:3px solid var(--border);
+}
+.nav-in{max-width:1200px;margin:0 auto;padding:14px 24px;display:flex;align-items:center;gap:24px}
+.logo{display:flex;align-items:center;gap:10px;font-weight:900;font-size:20px;text-decoration:none}
+.logo-mark{
+  width:36px;height:36px;display:grid;place-items:center;
+  background:var(--primary);border:3px solid var(--border);box-shadow:3px 3px 0 var(--border);
+}
+.logo-mark svg{width:20px;height:20px;color:#fff}
+.nav-links{display:flex;gap:4px;margin-left:auto}
+.nav-links a{
+  text-decoration:none;font-weight:600;font-size:15px;padding:8px 14px;
+  transition:background .15s;
+}
+.nav-links a:hover{background:var(--primary-soft)}
+.nav-gh{
+  display:flex;align-items:center;gap:8px;
+  background:var(--card);border:3px solid var(--border);box-shadow:var(--shadow);
+  padding:8px 16px;font-weight:800;font-size:15px;text-decoration:none;
+  transition:transform .15s,box-shadow .15s;
+}
+.nav-gh:hover{transform:translate(-2px,-2px);box-shadow:6px 6px 0 var(--border)}
+.nav-gh svg{width:18px;height:18px}
+@media (max-width:640px){.nav-links{display:none}}
+
+/* ============ Hero ============ */
+.hero{padding:72px 0 64px;position:relative}
+.hero-grid{display:grid;grid-template-columns:1.05fr .95fr;gap:56px;align-items:center}
+.badge{
+  display:inline-flex;align-items:center;gap:8px;
+  background:var(--primary-soft);border:2px solid var(--border);
+  padding:5px 14px;font-size:13.5px;font-weight:700;margin-bottom:22px;
+}
+.badge .dot{width:9px;height:9px;background:var(--ok);border-radius:50%;border:1.5px solid var(--border)}
+.hero h1{font-size:clamp(34px,5vw,56px);font-weight:900;margin-bottom:6px}
+.hero h1 .brand{color:var(--primary)}
+.hero .tag{
+  font-size:clamp(17px,2.2vw,22px);font-weight:800;margin-bottom:14px;
+}
+.hero .sub{color:var(--ink-soft);font-size:16.5px;max-width:46ch;margin-bottom:28px}
+.cta-row{display:flex;gap:16px;flex-wrap:wrap}
+.btn{
+  display:inline-flex;align-items:center;gap:10px;
+  padding:14px 26px;font-size:16.5px;font-weight:800;text-decoration:none;
+  border:3px solid var(--border);box-shadow:var(--shadow);
+  transition:transform .15s,box-shadow .15s;
+}
+.btn svg{width:20px;height:20px}
+.btn:hover{transform:translate(-2px,-2px);box-shadow:6px 6px 0 var(--border)}
+.btn:active{transform:translate(0,0);box-shadow:2px 2px 0 var(--border)}
+.btn-primary{background:var(--primary);color:#fff}
+.btn-primary:hover{background:var(--primary-dark)}
+.btn-cta{background:var(--cta);color:var(--ink)}
+.btn-cta:hover{background:var(--cta-dark);color:#fff}
+.btn-ghost{background:var(--card);color:var(--ink)}
+.hero-meta{margin-top:20px;font-size:13.5px;color:var(--ink-soft);font-family:var(--mono)}
+
+/* 应用窗口模拟（纯 CSS 手绘，非截图） */
+.window{
+  background:var(--card);border:3px solid var(--border);box-shadow:var(--shadow-lg);
+}
+.win-bar{
+  display:flex;align-items:center;gap:8px;padding:10px 14px;
+  background:var(--primary-soft);border-bottom:3px solid var(--border);
+}
+.win-bar .dot{width:12px;height:12px;border:2px solid var(--border)}
+.win-bar .t{margin-left:8px;font-size:13px;font-weight:700;color:var(--ink)}
+.win-bar .dots{display:flex;gap:6px}
+.win-bar .dots .dot:nth-child(1){background:#FCA5A5}
+.win-bar .dots .dot:nth-child(2){background:#FCD34D}
+.win-bar .dots .dot:nth-child(3){background:#86EFAC}
+.win-body{padding:16px}
+.win-input{
+  display:flex;gap:10px;margin-bottom:14px;
+}
+.win-field{
+  flex:1;border:2px solid var(--border);padding:9px 12px;
+  font-family:var(--mono);font-size:12.5px;color:var(--ink-soft);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;background:#fff;
+}
+.win-btn{background:var(--primary);color:#fff;border:2px solid var(--border);padding:9px 16px;font-size:12.5px;font-weight:800;white-space:nowrap}
+.win-table{border:2px solid var(--border)}
+.win-hrow,.win-row{
+  display:grid;grid-template-columns:52px 96px 76px 62px 1fr;gap:8px;
+  padding:8px 12px;font-size:12.5px;align-items:center;
+}
+.win-hrow{background:#F1F5F9;font-weight:800;border-bottom:2px solid var(--border)}
+.win-row{border-bottom:1px solid #E2E8F0;font-family:var(--mono)}
+.win-row:last-child{border-bottom:0}
+.win-row.sel{background:var(--primary-soft)}
+.win-row .name{font-family:var(--sans);font-weight:700}
+.tagpill{font-size:11px;font-weight:800;padding:1px 8px;border:1.5px solid var(--border);background:#fff;justify-self:start}
+.tagpill.hot{background:var(--primary);color:#fff}
+.win-row .path{color:var(--ink-soft);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.win-status{
+  margin-top:14px;border:2px solid var(--border);background:#F0FDF4;
+  padding:9px 12px;font-size:12.5px;display:flex;gap:8px;align-items:center;
+}
+.win-status .okdot{width:10px;height:10px;background:var(--ok);border-radius:50%;border:1.5px solid var(--border);flex:none}
+
+/* ============ 通用 section ============ */
+section{padding:72px 0}
+.sec-head{max-width:720px;margin:0 auto 48px;text-align:center}
+.kicker{
+  display:inline-block;background:var(--card);border:2px solid var(--border);
+  box-shadow:3px 3px 0 var(--border);padding:4px 14px;
+  font-size:13px;font-weight:800;letter-spacing:.08em;margin-bottom:16px;
+}
+.sec-head h2{font-size:clamp(26px,3.6vw,38px);font-weight:900;margin-bottom:12px}
+.sec-head p{color:var(--ink-soft);font-size:17px}
+
+/* 特性网格 */
+.feat-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:24px}
+.feat{
+  background:var(--card);border:3px solid var(--border);box-shadow:var(--shadow);
+  padding:26px;transition:transform .15s,box-shadow .15s;
+}
+.feat:hover{transform:translate(-3px,-3px);box-shadow:var(--shadow-lg)}
+.feat .ico{
+  width:48px;height:48px;display:grid;place-items:center;margin-bottom:18px;
+  background:var(--primary-soft);border:2.5px solid var(--border);
+}
+.feat .ico svg{width:24px;height:24px;color:var(--primary-dark)}
+.feat:nth-child(3n+2) .ico{background:#FFEDD5}
+.feat:nth-child(3n+2) .ico svg{color:var(--warn)}
+.feat:nth-child(3n) .ico{background:#DCFCE7}
+.feat:nth-child(3n) .ico svg{color:var(--ok)}
+.feat h3{font-size:18px;font-weight:800;margin-bottom:8px}
+.feat p{font-size:14.5px;color:var(--ink-soft)}
+
+/* 三步流程 */
+.steps{display:grid;grid-template-columns:repeat(3,1fr);gap:24px;counter-reset:step}
+.step{
+  position:relative;background:var(--card);border:3px solid var(--border);
+  box-shadow:var(--shadow);padding:26px 24px 24px;
+}
+.step::before{
+  counter-increment:step;content:"0" counter(step);
+  position:absolute;top:-18px;left:22px;
+  background:var(--primary);color:#fff;border:3px solid var(--border);
+  font-weight:900;font-size:20px;padding:2px 14px;box-shadow:3px 3px 0 var(--border);
+}
+.step h3{font-size:17.5px;font-weight:800;margin:14px 0 8px}
+.step p{font-size:14.5px;color:var(--ink-soft)}
+.step .mono{font-family:var(--mono);font-size:12.5px;background:#F1F5F9;border:1.5px solid var(--border);padding:2px 8px}
+
+/* 引擎原理 */
+.engines{display:grid;grid-template-columns:repeat(3,1fr);gap:24px}
+.eng{
+  background:var(--card);border:3px solid var(--border);box-shadow:var(--shadow);padding:26px;
+}
+.eng h3{display:flex;align-items:center;gap:10px;font-size:17px;font-weight:900;margin-bottom:6px}
+.eng h3 .chip{background:var(--border);color:#fff;font-size:12px;font-weight:800;padding:2px 10px}
+.eng .speed{font-size:13px;font-weight:800;margin-bottom:12px}
+.eng .speed.s-fast{color:var(--ok)}
+.eng .speed.s-deep{color:var(--warn)}
+.eng p{font-size:14.5px;color:var(--ink-soft)}
+.eng .note{margin-top:14px;font-size:12.5px;border-top:2px solid #E2E8F0;padding-top:10px;color:var(--ink-soft)}
+
+/* 安全护栏 */
+.guard{
+  background:var(--border);color:#F8FAFC;border-radius:0;padding:56px 0;
+}
+.guard .sec-head h2,.guard .sec-head p{color:#F8FAFC}
+.guard .kicker{background:var(--cta);color:var(--ink);border-color:#F8FAFC;box-shadow:3px 3px 0 #F8FAFC}
+.guard-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:24px}
+.g{
+  border:3px solid #F8FAFC;background:transparent;padding:24px;
+}
+.g .no{font-size:30px;font-weight:900;color:var(--cta);font-family:var(--mono)}
+.g h3{font-size:17px;font-weight:800;margin:10px 0 8px}
+.g p{font-size:14px;color:#CBD5E1}
+
+/* CLI 代码块 */
+.cli{
+  max-width:860px;margin:0 auto;background:#0F172A;border:3px solid var(--border);
+  box-shadow:var(--shadow-lg);
+}
+.cli-bar{
+  display:flex;align-items:center;gap:8px;padding:10px 16px;
+  background:#1E293B;border-bottom:3px solid var(--border);
+}
+.cli-bar .dot{width:12px;height:12px;border-radius:50%;border:2px solid #F8FAFC}
+.cli-bar .dots{display:flex;gap:6px}
+.cli-bar .dots .dot:nth-child(1){background:#F87171}
+.cli-bar .dots .dot:nth-child(2){background:#FBBF24}
+.cli-bar .dots .dot:nth-child(3){background:#34D399}
+.cli-bar .t{margin-left:8px;color:#94A3B8;font-size:13px;font-family:var(--mono)}
+.cli pre{
+  padding:22px 26px;color:#E2E8F0;font-family:var(--mono);
+  font-size:14px;line-height:1.9;overflow-x:auto;
+}
+.cli .c{color:#64748B}
+.cli .g{color:#34D399}
+.cli .b{color:#60A5FA}
+.cli .o{color:#F97316}
+
+/* CTA 大区 */
+.final{background:var(--cta);border-top:3px solid var(--border);border-bottom:3px solid var(--border);padding:72px 0;text-align:center}
+.final h2{font-size:clamp(28px,4vw,44px);font-weight:900;margin-bottom:14px}
+.final p{font-size:17px;font-weight:600;max-width:52ch;margin:0 auto 30px}
+.final .cta-row{justify-content:center}
+.final .btn-ghost{background:#fff}
+
+/* 页脚 */
+footer{padding:40px 0;border-top:3px solid var(--border)}
+.foot-in{display:flex;flex-wrap:wrap;gap:16px;align-items:center;justify-content:space-between;max-width:1200px;margin:0 auto;padding:0 24px;font-size:14px;color:var(--ink-soft)}
+.foot-in a{font-weight:700;text-decoration:none;border-bottom:2px solid var(--primary)}
+.foot-in a:hover{background:var(--primary-soft)}
+.foot-links{display:flex;gap:22px}
+
+/* ============ 响应式（375 / 768 / 1024 / 1440） ============ */
+@media (max-width:1024px){
+  .hero-grid{grid-template-columns:1fr;gap:44px}
+  .feat-grid,.steps,.engines,.guard-grid{grid-template-columns:repeat(2,1fr)}
+}
+@media (max-width:768px){
+  .hero{padding:48px 0}
+  section{padding:56px 0}
+  .feat-grid,.engines{grid-template-columns:1fr}
+  .steps{grid-template-columns:1fr}
+  .guard-grid{grid-template-columns:1fr}
+}
+@media (max-width:480px){
+  .cta-row .btn{width:100%;justify-content:center}
+  .win-row,.win-hrow{grid-template-columns:44px 84px 66px 1fr}
+  .win-row .hid,.win-hrow .hid{display:none}
+}
+</style>
+</head>
+<body>
+<a class="skip" href="#main">跳到主内容</a>
+
+<!-- ============ 导航 ============ -->
+<nav aria-label="主导航">
+  <div class="nav-in">
+    <a class="logo" href="#top">
+      <span class="logo-mark" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="10" rx="0"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+      </span>
+      WhoLock
+    </a>
+    <div class="nav-links">
+      <a href="#features">功能</a>
+      <a href="#how">三步用法</a>
+      <a href="#engines">三通道原理</a>
+      <a href="#safety">安全护栏</a>
+    </div>
+    <a class="nav-gh" href="https://github.com/okazaki112/wholock" target="_blank" rel="noopener">
+      <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 .5C5.65.5.5 5.65.5 12c0 5.08 3.29 9.39 7.86 10.91.58.11.79-.25.79-.55v-2.17c-3.2.7-3.87-1.37-3.87-1.37-.52-1.33-1.28-1.69-1.28-1.69-1.05-.71.08-.7.08-.7 1.16.08 1.77 1.19 1.77 1.19 1.03 1.77 2.7 1.26 3.36.96.1-.75.4-1.26.73-1.55-2.55-.29-5.23-1.28-5.23-5.68 0-1.26.45-2.28 1.19-3.09-.12-.29-.52-1.46.11-3.05 0 0 .97-.31 3.18 1.18a11.1 11.1 0 0 1 5.8 0c2.2-1.49 3.17-1.18 3.17-1.18.63 1.59.23 2.76.11 3.05.74.81 1.19 1.83 1.19 3.09 0 4.41-2.69 5.38-5.25 5.67.41.35.78 1.05.78 2.12v3.14c0 .3.21.66.8.55A11.5 11.5 0 0 0 23.5 12C23.5 5.65 18.35.5 12 .5Z"/></svg>
+      GitHub
+    </a>
+  </div>
+</nav>
+
+<main id="main">
+<!-- ============ Hero ============ -->
+<header class="hero" id="top">
+  <div class="wrap hero-grid">
+    <div>
+      <span class="badge"><span class="dot" aria-hidden="true"></span>v1.0.0 · MIT 开源 · Windows 10/11 x64</span>
+      <h1><span class="brand">WhoLock</span> 文件占用定位器</h1>
+      <p class="tag">这个文件删不掉、U 盘弹不出——<br>到底被谁占着？三秒给你答案。</p>
+      <p class="sub">RestartManager + 句柄表 + 子进程隔离深扫，三通道找出占用进程的 PID、名称、完整路径与占用方式。安全护栏下，一键结束进程或释放句柄。单 exe 免安装，拷进 U 盘就能用。</p>
+      <div class="cta-row">
+        <a class="btn btn-primary" href="https://github.com/okazaki112/wholock/releases/latest" target="_blank" rel="noopener">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          下载 wholock.exe
+        </a>
+        <a class="btn btn-ghost" href="https://github.com/okazaki112/wholock" target="_blank" rel="noopener">
+          <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 .5C5.65.5.5 5.65.5 12c0 5.08 3.29 9.39 7.86 10.91.58.11.79-.25.79-.55v-2.17c-3.2.7-3.87-1.37-3.87-1.37-.52-1.33-1.28-1.69-1.28-1.69-1.05-.71.08-.7.08-.7 1.16.08 1.77 1.19 1.77 1.19 1.03 1.77 2.7 1.26 3.36.96.1-.75.4-1.26.73-1.55-2.55-.29-5.23-1.28-5.23-5.68 0-1.26.45-2.28 1.19-3.09-.12-.29-.52-1.46.11-3.05 0 0 .97-.31 3.18 1.18a11.1 11.1 0 0 1 5.8 0c2.2-1.49 3.17-1.18 3.17-1.18.63 1.59.23 2.76.11 3.05.74.81 1.19 1.83 1.19 3.09 0 4.41-2.69 5.38-5.25 5.67.41.35.78 1.05.78 2.12v3.14c0 .3.21.66.8.55A11.5 11.5 0 0 0 23.5 12C23.5 5.65 18.35.5 12 .5Z"/></svg>
+          查看源码
+        </a>
+      </div>
+      <p class="hero-meta">412 KB 单文件 · 零第三方依赖 · 无网络无遥测 · /MT 静态链接</p>
+    </div>
+
+    <!-- 纯 CSS 手绘应用窗口 -->
+    <div class="window" role="img" aria-label="WhoLock 主界面示意：输入被占用文件路径，列表列出占用进程的 PID、进程名、占用方式、来源引擎与路径">
+      <div class="win-bar">
+        <span class="dots" aria-hidden="true"><span class="dot"></span><span class="dot"></span><span class="dot"></span></span>
+        <span class="t">WhoLock · 文件占用定位器 v1.0.0</span>
+      </div>
+      <div class="win-body">
+        <div class="win-input">
+          <span class="win-field">D:\share\报告终版.docx</span>
+          <span class="win-btn">扫描占用</span>
+        </div>
+        <div class="win-table" aria-hidden="true">
+          <div class="win-hrow"><span>PID</span><span>进程名</span><span>占用方式</span><span class="hid">来源</span><span>路径</span></div>
+          <div class="win-row sel"><span>10608</span><span class="name">WPS 文字</span><span><span class="tagpill hot">RM+HT</span></span><span class="hid"><span class="tagpill">RM+HT</span></span><span class="path">C:\Program Files\Kingsoft\wps.exe</span></div>
+          <div class="win-row"><span>8441</span><span class="name">Everything</span><span><span class="tagpill">HT</span></span><span class="hid"><span class="tagpill">HT</span></span><span class="path">C:\Tools\Everything.exe</span></div>
+          <div class="win-row"><span>3327</span><span class="name">搜狗云代理</span><span><span class="tagpill">深扫</span></span><span class="hid"><span class="tagpill">深扫</span></span><span class="path">C:\Program Files (x86)\Sogou\...</span></div>
+        </div>
+        <div class="win-status"><span class="okdot" aria-hidden="true"></span>耗时 96ms ｜ 命中 3 个进程 ｜ 句柄明细就绪</div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<!-- ============ 特性 ============ -->
+<section id="features" aria-labelledby="features-h">
+  <div class="wrap">
+    <div class="sec-head">
+      <span class="kicker">FEATURES</span>
+      <h2 id="features-h">小工具，大纵深</h2>
+      <p>不是只报一个 PID 就完事——从定位、取证到处置，一条龙闭环。</p>
+    </div>
+    <div class="feat-grid">
+      <div class="feat">
+        <span class="ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg></span>
+        <h3>双引擎合并定位</h3>
+        <p>RestartManager 官方通道秒级响应；句柄表快照（NtQuerySystemInformation + DuplicateHandle）补盲，结果合并去重、互为印证。</p>
+      </div>
+      <div class="feat">
+        <span class="ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 3 14h7l-1 8 10-12h-7l1-8z"/></svg></span>
+        <h3>深扫补盲</h3>
+        <p>RM 看不见的只读共享占用，交给子进程隔离的全表句柄枚举：超时自动截断、部分结果回收，挂死永远不会传染父进程。</p>
+      </div>
+      <div class="feat">
+        <span class="ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7v4a1 1 0 0 0 1 1h3"/><path d="M21 17v-4a1 1 0 0 0-1-1h-3"/><rect x="7" y="3" width="10" height="8"/><rect x="7" y="13" width="10" height="8"/></svg></span>
+        <h3>目录与多目标</h3>
+        <p>多行路径、整窗拖放、目录递归展开（深度 8 / 上限 2000）。「占用文件」列把锁精确归属到目录里那一个具体文件。</p>
+      </div>
+      <div class="feat">
+        <span class="ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 6h13M8 12h13M8 18h13"/><path d="m3 6 1 1 2-2M3 12l1 1 2-2M3 18l1 1 2-2"/></svg></span>
+        <h3>句柄级明细</h3>
+        <p>点选进程即拉取句柄清单：句柄值、访问权限、类型（磁盘/管道/其他）与完整路径，占用取证细到每一个句柄。</p>
+      </div>
+      <div class="feat">
+        <span class="ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg></span>
+        <h3>安全护栏三层</h3>
+        <p>系统进程名单拦死（csrss/lsass/svchost/explorer…），危险模式默认关闭，结束与释放均有二次确认——三层防线缺一不可。</p>
+      </div>
+      <div class="feat">
+        <span class="ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m16 18 6-6-6-6M8 6l-6 6 6 6"/></svg></span>
+        <h3>CLI / 右键集成</h3>
+        <p>同体 exe <span style="font-family:var(--mono)">--cli --json</span> 供脚本调用；Explorer 右键「查找占用」一键直达，软件内开关完全可逆。</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 三步用法 ============ -->
+<section id="how" aria-labelledby="how-h" style="background:#EEF2F7;border-top:3px solid var(--border);border-bottom:3px solid var(--border)">
+  <div class="wrap">
+    <div class="sec-head">
+      <span class="kicker">QUICK START</span>
+      <h2 id="how-h">三步，终结“删不掉”</h2>
+      <p>不需要安装、不需要管理员权限（普通权限即可定位）、不需要说明书。</p>
+    </div>
+    <div class="steps">
+      <div class="step">
+        <h3>拖进来</h3>
+        <p>把删不掉的文件直接拖进窗口，或点「浏览…」选定即扫；目录、多文件一次全收。</p>
+      </div>
+      <div class="step">
+        <h3>看谁占的</h3>
+        <p>列表给出每个占用进程的 PID、名称、完整路径、占用方式与来源引擎；点选行还有句柄级明细。</p>
+      </div>
+      <div class="step">
+        <h3>安全处置</h3>
+        <p>勾选危险模式后结束进程，或只关掉那一个句柄；成功后还可一键删除文件并自动验证消失。</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 三通道原理 ============ -->
+<section id="engines" aria-labelledby="engines-h">
+  <div class="wrap">
+    <div class="sec-head">
+      <span class="kicker">HOW IT WORKS</span>
+      <h2 id="engines-h">三条通道，互为印证</h2>
+      <p>Windows 从不直接告诉你“谁占了这个文件”——WhoLock 用三种官方/半官方机制把答案拼出来。</p>
+    </div>
+    <div class="engines">
+      <div class="eng">
+        <h3><span class="chip">RM</span>RestartManager</h3>
+        <p class="speed s-fast">速度 ★★★★★ ｜ 官方 API</p>
+        <p>RmStartSession / RmRegisterResources / RmGetList——微软为“安装器查询重启对象”设计的官方通道，写锁与模块占用秒级命中。</p>
+        <p class="note">盲区：只读共享句柄不在它的模型里（实测），所以需要第二条通道补盲。</p>
+      </div>
+      <div class="eng">
+        <h3><span class="chip">HT</span>句柄表扫描</h3>
+        <p class="speed s-fast">速度 ★★★☆☆ ｜ NtQuerySystemInformation</p>
+        <p>对系统句柄表做快照，逐条 DuplicateHandle 后反查文件路径。Anything Anywhere——只要进程开着这个文件，就逃不掉。</p>
+        <p class="note">工程化：死句柄挂死隔离、名称解析候选门模式、64/32 位结构位移校验。</p>
+      </div>
+      <div class="eng">
+        <h3><span class="chip">DEEP</span>子进程隔离深扫</h3>
+        <p class="speed s-deep">速度 ★★☆☆☆ ｜ 全表穷举</p>
+        <p>由子进程执行全表枚举与名称解析：预算 25 秒超时截断、部分结果回收、fork 炸弹熔断——慢而全，且永远不挂死主程序。</p>
+        <p class="note">闭环：配合远端句柄释放（F8），只关那一个句柄、不杀整个进程。</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ CLI ============ -->
+<section aria-labelledby="cli-h" style="padding-top:24px">
+  <div class="wrap">
+    <div class="sec-head">
+      <span class="kicker">CLI</span>
+      <h2 id="cli-h">命令行同样能打</h2>
+      <p>GUI 与 CLI 同体 exe：<span style="font-family:var(--mono)">--cli</span> 切控制台，<span style="font-family:var(--mono)">--json</span> 供脚本与流水线消费。</p>
+    </div>
+    <div class="cli" role="img" aria-label="命令行示例：WhoLock --cli 扫描文件输出占用进程列表">
+      <div class="cli-bar"><span class="dots" aria-hidden="true"><span class="dot"></span><span class="dot"></span><span class="dot"></span></span><span class="t">Windows PowerShell</span></div>
+      <pre><span class="c"># 人读列表（双引擎）</span>
+<span class="o">wholock</span> <span class="b">--cli</span> <span class="g">"D:\share\报告终版.docx"</span>
+
+<span class="c"># JSON 输出 + 仅 RestartManager 引擎</span>
+<span class="o">wholock</span> <span class="b">--cli --json --engine=rm</span> <span class="g">"D:\share\报告终版.docx"</span>
+
+<span class="c"># 多目标 + 目录自动展开</span>
+<span class="o">wholock</span> <span class="b">--cli</span> <span class="g">"D:\a.txt"</span> <span class="g">"D:\dir1"</span> <span class="g">"D:\dir2"</span>
+
+<span class="c"># Explorer 右键「查找占用」（当前用户，可逆）</span>
+<span class="o">wholock</span> <span class="b">--cli --register-shell</span></pre>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 安全护栏（暗底大区） ============ -->
+<section class="guard" id="safety" aria-labelledby="safety-h">
+  <div class="wrap">
+    <div class="sec-head">
+      <span class="kicker">SAFETY FIRST</span>
+      <h2 id="safety-h">敢杀进程，更敢拦你</h2>
+      <p>定位可以随便跑，处置必须层层设防——WhoLock 的护栏比它的功能更较真。</p>
+    </div>
+    <div class="guard-grid">
+      <div class="g">
+        <div class="no">01</div>
+        <h3>系统进程名单拦死</h3>
+        <p>PID≤4、System、wininit、csrss、svchost、lsass、explorer、本进程——无论怎么点，直接拒绝，连确认框都不弹。</p>
+      </div>
+      <div class="g">
+        <div class="no">02</div>
+        <h3>危险模式默认关</h3>
+        <p>「启用危险操作」勾选框默认关闭且永不入库；按钮禁用态实时联动，不满足条件连门都摸不到。</p>
+      </div>
+      <div class="g">
+        <div class="no">03</div>
+        <h3>逐次二次确认</h3>
+        <p>结束进程与关闭句柄各自弹出完整上下文确认框（PID / 名称 / 路径 / 后果），看清楚了才放行。</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ CTA ============ -->
+<section class="final" aria-labelledby="final-h">
+  <div class="wrap">
+    <h2 id="final-h">下一次“文件正在被另一个程序使用”，<br>别再重启电脑了。</h2>
+    <p>单 exe、零依赖、MIT 开源——下载、双击、拖文件，三步解决战斗。</p>
+    <div class="cta-row">
+      <a class="btn btn-primary" href="https://github.com/okazaki112/wholock/releases/latest" target="_blank" rel="noopener">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        免费下载 v1.0.0
+      </a>
+      <a class="btn btn-ghost" href="https://github.com/okazaki112/wholock#readme" target="_blank" rel="noopener">阅读文档</a>
+    </div>
+  </div>
+</section>
+</main>
+
+<!-- ============ 页脚 ============ -->
+<footer>
+  <div class="foot-in">
+    <span>© 2026 okazaki112 · WhoLock 以 <a href="https://github.com/okazaki112/wholock/blob/main/LICENSE" target="_blank" rel="noopener">MIT License</a> 开源</span>
+    <span class="foot-links">
+      <a href="https://github.com/okazaki112/wholock" target="_blank" rel="noopener">GitHub</a>
+      <a href="https://github.com/okazaki112/wholock/releases" target="_blank" rel="noopener">Releases</a>
+      <a href="https://github.com/okazaki112/wholock/blob/main/CHANGELOG.md" target="_blank" rel="noopener">Changelog</a>
+    </span>
+  </div>
+</footer>
+</body>
+</html>

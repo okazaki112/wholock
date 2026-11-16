@@ -1,0 +1,15 @@
+# 行为一致：文本文件入库用 LF，checkout 按平台原生行尾
+* text=auto
+
+# Windows 源码/脚本保持 CRLF（MSVC / cmd 批处理需要）
+*.cmd text eol=crlf
+*.bat text eol=crlf
+*.ps1 text eol=crlf
+*.rc text eol=crlf
+*.manifest text eol=crlf
+
+# 明确的二进制（防止误做行尾转换）
+*.png binary
+*.ico binary
+*.exe binary
+*.lib binary

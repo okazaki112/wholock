@@ -1,0 +1,10 @@
+#pragma once
+// 版本单一事实源：由 CMake project(VERSION) 经 configure_file 生成，勿手改。
+// 消费点：标题栏 / 品牌副标 / CLI --version / 关于框 / check.ps1 G8 一致性机检。
+#define WHOLOCK_VERSION_MAJOR @PROJECT_VERSION_MAJOR@
+#define WHOLOCK_VERSION_MINOR @PROJECT_VERSION_MINOR@
+#define WHOLOCK_VERSION_PATCH @PROJECT_VERSION_PATCH@
+#define WHOLOCK_VERSION_STR "@PROJECT_VERSION@"
+
+#define WHOLOCK_WSTR2(x) L##x
+#define WHOLOCK_WSTR(x) WHOLOCK_WSTR2(x)

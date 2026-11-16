@@ -1,0 +1,21 @@
+build/
+out/
+.cache/
+.vs/
+*.obj
+*.exe
+*.ilk
+*.pdb
+*.exp
+CMakeCache.txt
+CMakeFiles/
+# 注意：不要写裸 Testing/ —— Windows 大小写不敏感会误伤 src/testing（坑已实测）；
+# CTest 输出目录 build/Testing 已被上面的 build/ 覆盖
+x64/
+
+# 本地工作目录（不入库、不推送）
+.opencode/
+发布版/
+task-plan/
+
+*.log
